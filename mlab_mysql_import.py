@@ -9,7 +9,7 @@ import MySQLdb
 # PLEASE UPDATE THESE SETTINGS
 db_host = "localhost" # your host, usually localhost
 db_user = "root" # your username
-db_passwd = "rootpasswd" # your password
+db_passwd = "rootpassword" # your password
 db_name = "cpp" # name of the database
 db_table = "mlab" # name of the table
 
@@ -86,9 +86,9 @@ for line in f:
   line = line.strip()
   source_ip = extract_ip(line)
   test_datetime = extract_datetime(line)
-  print 'Found test entry performed at ', test_datetime, ' from ' + destination + ' -> ' + source_ip + '.' 
-  columns = 'datetime, destination, source'
-  values = ','.join([test_datetime, destination, source_ip])
-  cur.execute("REPLACE INTO  " + db_table + " (created_at, " + columns + ") VALUES(" + values + ") ") 
+  print 'Found test performed on the', test_datetime, 'from ' + destination + ' -> ' + source_ip + '.' 
+  columns = 'date, destination, source'
+  values = '"' + '", "'.join([test_datetime.isoformat(), destination, source_ip]) + '"'
+  cur.execute("INSERT INTO  " + db_table + " (" + columns + ") VALUES(" + values + ") ") 
 
 
