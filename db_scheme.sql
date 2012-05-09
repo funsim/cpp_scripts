@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `glasnot` (
+CREATE TABLE IF NOT EXISTS `glasnost` (
   `id` int NOT NULL AUTO_INCREMENT, 
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `date` datetime NOT NULL,

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import sys
 import re
+import os
 from optparse import OptionParser
 from datetime import datetime
 import dateutil.parser as dparser
@@ -10,8 +11,9 @@ import MySQLdb
 db_host = "localhost" # your host, usually localhost
 db_user = "root" # your username
 db_passwd = "rootpassword" # your password
-db_name = "cpp" # name of the database
-db_table = "mlab" # name of the table
+db_name = "mlab" # name of the database
+db_tables = {"glasnost": "glasnost", "ndt": "ndt"} # a mapping from testname to tablename
+db_filetable = 'files'
 
 # Read command line options
 def usage():
@@ -31,6 +33,8 @@ try:
      f = open(filename, 'r')
 except IOError as e:
      print 'Could not open file ', filename
+# Extract the basename of the filename, as the path is not of interest after this point
+filename = os.path.basename(filename)
 
 def extract_destination(filename):
   ''' This routine extracts the destination server of the mlab file. 
@@ -72,6 +76,33 @@ def extract_ip(string):
     sys.exit(1)
   return match.group(0)
 
+def insert_dbentry(cur, file_id, db_table, test_datetime, destination, source_ip):
+    ''' Insert a test connection to the database if it not already exists '''
+    # Check if the entry exists already 
+    sql = "SELECT COUNT(*) FROM " + db_table + " WHERE date = '" + test_datetime.isoformat() + "' AND destination = '" + destination +  "' AND  source = '" + source_ip + "' AND file_id = " + str(file_id) 
+    cur.execute(sql)
+
+    # If not, then isert it
+    if cur.fetchone()[0] < 1:
+        print 'Found new test performed on the', test_datetime, 'from ' + destination + ' -> ' + source_ip + '.' 
+
+        columns = ', '.join(['date', 'destination', 'source', 'file_id'])
+        values = '"' + '", "'.join([test_datetime.isoformat(), destination, source_ip, str(file_id)]) + '"'
+        sql = "INSERT INTO  " + db_table + " (" + columns + ") VALUES(" + values + ") "
+        cur.execute(sql)
+
+def get_file_id(cur, filename):
+    ''' Returns the id of a filename in the filename table. Creates a new row if the filename does not exist. ''' 
+    sql = "SELECT id FROM " + db_filetable + " WHERE filename ='" + filename + "'"
+    cur.execute(sql)
+    id = cur.fetchone()
+    # If the entry does not exist, we add it in
+    if not id:
+        sql = "INSERT INTO  " + db_filetable + " (filename) VALUES('" + filename + "')"
+        cur.execute(sql)
+        return get_file_id(cur, filename)
+    return id[0]
+
 # Connect to the mysql database
 db = MySQLdb.connect(host = db_host, 
                      user = db_user, 
@@ -79,16 +110,33 @@ db = MySQLdb.connect(host = db_host,
                      db = db_name) 
 cur = db.cursor() 
 
-# Read the data line by line and import it
+# Find the destination server by investigating the filename
 destination = extract_destination(filename)
 print 'Found destination: ', destination
+
+# Get the filename id from the files table
+file_id = get_file_id(cur, filename) 
+db.commit()
+
+# Find the testsuite by investigating the filename
+try:
+    test = [test for test in db_tables.keys() if test in filename][0]
+except IndexError:
+    print 'The filename ' + filename + ' does not contain a valid testname.'
+    sys.exit(1)
+print "Found test suite " + test 
+
+# Read the file line by line and import it into the database
 for line in f:
   line = line.strip()
   source_ip = extract_ip(line)
   test_datetime = extract_datetime(line)
-  print 'Found test performed on the', test_datetime, 'from ' + destination + ' -> ' + source_ip + '.' 
-  columns = 'date, destination, source'
-  values = '"' + '", "'.join([test_datetime.isoformat(), destination, source_ip]) + '"'
-  cur.execute("INSERT INTO  " + db_table + " (" + columns + ") VALUES(" + values + ") ") 
+  insert_dbentry(cur, file_id, db_tables[test], test_datetime, destination, source_ip)
 
+# Commit and finish up
+print 'Writing changes to database'
+db.commit()
 
+# disconnect from server
+db.close()
+print 'Done'
